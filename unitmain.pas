@@ -1,5 +1,9 @@
 unit unitmain;
 
+// 2026-01-10: YH, copilot
+//           : allow command line file name.
+//           : update for lazarus-4.4-fpc-3.2.2-win64
+
 {$mode objfpc}{$H+}
 
 interface
@@ -15,8 +19,11 @@ uses
   UTF8Process,
   LCLIntf, LCLType,
   clipbrd, //clipboard
-  fpspreadsheet, fpsallformats, //export ods /xls
-  inifiles,csvdocument;
+  // fpspreadsheet, fpsallformats, //export ods /xls
+  fpspreadsheet, fpstypes, fpsallformats, Math, // 2026-01-10 update
+  inifiles,csvdocument
+  
+;
 
 type
    TRange = record
@@ -77,7 +84,7 @@ type
     MenuItem5: TMenuItem;
     MenuItem50: TMenuItem;
     MenuItem51: TMenuItem;
-    MenuItem52: TMenuItem;
+    MenuItem52: TMenuItem; // 2026-01-10: for Donate2, removed in unitmain.lfm
     MenuItem53: TMenuItem;
     MenuItem54: TMenuItem;
     MenuItem55: TMenuItem;
@@ -152,8 +159,9 @@ type
     ToolButton23: TToolButton;
     ToolButton24: TToolButton;
     ToolButton25: TToolButton;
+    ToolButton25A: TToolButton; // 2026-01-10 Add for web2
     ToolButton26: TToolButton;
-    ToolButton27: TToolButton;
+    ToolButton27: TToolButton;  // 2026-01-10 for Donate, removed in unitmain.lfm
     ToolButton28: TToolButton;
     ToolButton29: TToolButton;
     ToolButton3: TToolButton;
@@ -176,7 +184,10 @@ type
 
     procedure MenuItemSearchOnlineClick(Sender: TObject);
     procedure MenuItemFontClick(Sender: TObject);
+    procedure MenuItemWebpageClick(Sender: TObject);
+    procedure MenuItemWebpage2Click(Sender: TObject); //  2026-01-10 add
     procedure MenuItemDonateClick(Sender: TObject);
+    procedure MenuItemDonate2Click(Sender: TObject);
     procedure FindDialog1Find(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
@@ -208,7 +219,6 @@ type
     procedure MenuItemAddRowClick(Sender: TObject);
     procedure MenuItemRemoveRowsClick(Sender: TObject);
     procedure MenuItemToggleToolBarClick(Sender: TObject);
-    procedure MenuItemWebpageClick(Sender: TObject);
     procedure MenuItemSwapColumnsClick(Sender: TObject);
     procedure MenuItemPrintClick(Sender: TObject);
     procedure MenuItemTakeSnapshotClick(Sender: TObject);
@@ -221,7 +231,6 @@ type
     procedure MenuItemRestoreDefaultsClick(Sender: TObject);
     procedure MenuItemColorLabelClick(Sender: TObject);
     procedure MenuItemSortColumnClick(Sender: TObject);
-    procedure MenuItemDonate2Click(Sender: TObject);
     procedure MenuItemSaveOnExitClick(Sender: TObject);
     procedure MenuItemToggleStatusBarClick(Sender: TObject);
     procedure MenuItemAboutClick(Sender: TObject);
@@ -240,6 +249,7 @@ type
      procedure Sg2Xls(FilenameXLS:string);
    public
      { public declarations }
+	 procedure OpenCSVFile(const FileName: string); // 2026-01-10: add
    end;
 
 
@@ -282,7 +292,7 @@ var
 
 const
  conf = 'settings.ini';
- version  = '1.0';
+ version  = '1.1';
 
 implementation
 
@@ -302,7 +312,8 @@ begin
 
   for i:=0 to stringgrid1.RowCount -1 do begin
       for a:=0 to stringgrid1.ColCount -1 do begin
-             MyWorksheet.WriteUTF8Text(i,a,stringgrid1.Cells[a,i]);
+             // MyWorksheet.WriteUTF8Text(i,a,stringgrid1.Cells[a,i]);
+             MyWorksheet.WriteText(i,a,stringgrid1.Cells[a,i]); //2026-01-10 update
       end;
   end;
 
@@ -327,7 +338,8 @@ begin
 
   for i:=0 to stringgrid1.RowCount -1 do begin
       for a:=0 to stringgrid1.ColCount -1 do begin
-             MyWorksheet.WriteUTF8Text(i,a,stringgrid1.Cells[a,i]);
+             // MyWorksheet.WriteUTF8Text(i,a,stringgrid1.Cells[a,i]);
+             MyWorksheet.WriteText(i,a,stringgrid1.Cells[a,i]); //2026-01-10 update
       end;
   end;
 
@@ -508,6 +520,39 @@ begin
 
      Result := c;
 end;
+
+
+// 2026-01-10, YH, copilot
+//   add "TFormMain.OpenCSVFile" 
+//   allow Windows command line with input csv vile
+//   must be after "elvalaszto"
+//
+procedure TFormMain.OpenCSVFile(const FileName: string);
+var
+  txt1: string;
+begin
+  if FileExists(FileName) then
+  begin
+    tlista.LoadFromFile(FileName);
+
+    // detect separator from first line
+    if elvalaszto(tlista.Strings[0]) <> '' then
+      sep := elvalaszto(tlista.Strings[0])
+    else
+      sep := ',';
+
+    LoadStringGrid(FileName);
+
+    StatusBar1.Panels[2].Text := FileName;
+    if sep = #9 then
+      StatusBar1.Panels[1].Text := 'Tab'
+    else
+      StatusBar1.Panels[1].Text := sep;
+
+    Caption := 'CSVPad - ' + ExtractFileName(FileName);
+  end;
+end;
+
 
 //Modded by TrustFm
 procedure Sortgrid(Increment:boolean; Grid : TStringGrid; SortCol:integer);
@@ -1663,10 +1708,34 @@ end;
 //menu : Settings
 
 //Autoresize
+
+// old logic: fit all columns evently to GUI
+// procedure TFormMain.MenuItemAutoresizeClick(Sender: TObject);
+// begin
+//      stringgrid1.AutoFillColumns := not stringgrid1.AutoFillColumns;
+// end;
+
+// 2026-01-11: fit individual columns. 
 procedure TFormMain.MenuItemAutoresizeClick(Sender: TObject);
+var
+  col, row, maxWidth: Integer;
+  cellText: string;
 begin
-     stringgrid1.AutoFillColumns := not stringgrid1.AutoFillColumns;
+  for col := 0 to StringGrid1.ColCount - 1 do
+  begin
+    maxWidth := 0;
+    for row := 0 to StringGrid1.RowCount - 1 do
+    begin
+      cellText := StringGrid1.Cells[col, row];
+      // measure text width in pixels
+      maxWidth := Max(maxWidth, StringGrid1.Canvas.TextWidth(cellText));
+    end;
+    // add some padding so text isn’t clipped
+    StringGrid1.ColWidths[col] := maxWidth + 12;
+  end;
 end;
+
+
 
 //Toggle Label
 procedure TFormMain.MenuItemToggleLabelClick(Sender: TObject);
@@ -1762,7 +1831,7 @@ end;
 //About box
 procedure TFormMain.MenuItemAboutClick(Sender: TObject);
 var w:tform;
-    a,b,c,d,e:tlabel;
+   a,b,c,d,e:tlabel;
 
 begin
 
@@ -1783,7 +1852,7 @@ w := tform.Create(self);
   c := tlabel.Create(self);
   d := tlabel.Create(self);
   e := tlabel.Create(self);
-
+  
   with a do begin
     parent := w;
     top := 10;
@@ -1812,7 +1881,7 @@ w := tform.Create(self);
     top := 60;
     alignment := tacenter;
     font.Size := 10;
-    font.Style := [fsunderline];
+    // font.Style := [fsunderline];
     width:= 490;
     autosize:=false;
     font.color:=$00000000;
@@ -1822,8 +1891,8 @@ w := tform.Create(self);
     parent := w;
     top := 80;
     alignment := tacenter;
-    font.Size := 8;
-    font.Style := [fsbold];
+    font.Size := 10;
+    // font.Style := [fsbold];
     width:= 490;
     autosize:=false;
     font.color:=$00666666;
@@ -1834,27 +1903,34 @@ w := tform.Create(self);
     parent := w;
     top := 100;
     alignment := tacenter;
-    font.Size := 8;
-    font.Style := [fsbold];
+    font.Size := 10;
+    // font.Style := [fsbold];
     width:= 490;
     autosize:=false;
-    font.color:=$00666666;
+    font.color:=$00000000;
     wordwrap := true;
   end;
 
+  // a.Caption := 'CSVpad v' + version + ' By TrustFm [www.trustfm.net]';
+  // b.Caption := 'Original code by: Tivadar (Darh Media) 2003 - 2013 [darhmedia.blogspot.hu]';
+  // c.Caption := 'Thanks to:';
+  // d.Caption := 'Tivadar (Darh Media) DMcsvEditor, Vladimir Zhirov, Christian Ebenegger, Pinvoke';
+  // e.caption := 'CodeTyphon, Lazarus, FreePascal, UPX team';
+  // w.ShowModal;
+  
+  a.Caption := 'CSVpad v' + version + '[2026-01-10]';
+  b.Caption := 'Modified by  Y H Hui [hzmbenpo2011@gmail.com]';
+  c.Caption := 'forked from [https://github.com/EugeneUvin/CSVPad]';
+  d.Caption := 'Original code by: Tivadar (Darh Media) 2003 - 2013 [darhmedia.blogspot.hu]';
+  e.caption := 'My Github: [https://github.com/SmartTraffic2021/CSVPad]';
 
-  a.Caption := 'CSVpad v' + version + ' By TrustFm [www.trustfm.net]';
-  b.Caption := 'Original code by: Tivadar (Darh Media) 2003 - 2013 [darhmedia.blogspot.hu]';
-  c.Caption := 'Thanks to:';
-  d.Caption := 'Tivadar (Darh Media) DMcsvEditor, Vladimir Zhirov, Christian Ebenegger, Pinvoke';
-  e.caption := 'CodeTyphon, Lazarus, FreePascal, UPX team';
   w.ShowModal;
 
   a.Free;
   b.Free;
   c.Free;
   d.Free;
-  e.free;
+  e.Free;
   w.Free;
 end;
 
@@ -1862,11 +1938,17 @@ end;
 //Go to website
 procedure TFormMain.MenuItemWebpageClick(Sender: TObject);
 begin
+  GoToURL('https://github.com/SmartTraffic2021/CSVPad');  
+end;
+
+// 2026-01-10 add
+procedure TFormMain.MenuItemWebpage2Click(Sender: TObject);
+begin
   GoToURL('http://www.trustfm.net');
 end;
 
 
-//Donate trustfm
+//Donate TrustFm
 procedure TFormMain.MenuItemDonateClick(Sender: TObject);
 begin
   GoToURL('https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=M52J6BGABLMQU&lc=US');
